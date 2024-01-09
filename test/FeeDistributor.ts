@@ -42,7 +42,7 @@ describe("FeeDistributor", () => {
     expect(await vToken.balanceOf(emissions.target.toString())).greaterThan(
       9990000000n * e18
     );
-    expect(await vToken.balanceOf(feeDistributor.target.toString())).eq(
+    expect(await vToken.balanceOf(feeDistributor.target.toString())).eq(  //@audit why does feeDistributor get vTokens?
       4807692n * e18
     );
   });

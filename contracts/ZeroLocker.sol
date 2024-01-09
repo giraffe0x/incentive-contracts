@@ -22,6 +22,10 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 
 // This is a 4 year locker contract very similar to Curve and Solidly finance.
 
+//@audit why use ERC2981 fee royalty standard?
+//@audit ERC721Enumerable not used
+//@audit IERC721Receiver used but note that all ERC721 ops are self implemented
+
 contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
     uint256 internal WEEK;
     uint256 internal MAXTIME;
@@ -35,8 +39,18 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
 
     mapping(uint256 => uint256) public ownershipChange;
 
+    //@audit updated during checkpoint (called by anyone)
     uint256 public override epoch;
+
+    //    struct Point {
+    //     int128 bias;
+    //     int128 slope; // # -dweight / dt
+    //     uint256 ts;
+    //     uint256 blk; // block
+    // }
+    //@audit not sure what is this
     mapping(uint256 => Point) internal _pointHistory; // epoch -> unsigned point
+    //@audit not sure hhat is this
     mapping(uint256 => Point[1000000000]) internal _userPointHistory; // user -> Point[userEpoch]
 
     mapping(uint256 => uint256) public override userPointEpoch;
@@ -102,6 +116,7 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
             super.supportsInterface(_interfaceID);
     }
 
+    //@audit internal accounting of deposited tokens. Incremented with depositFor, reduced by withdraw
     function totalSupplyWithoutDecay()
         external
         view
@@ -111,12 +126,14 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
         return supply;
     }
 
+    //@audit assume this is some kind of points accrued by locking
     function pointHistory(
         uint256 val
     ) external view override returns (Point memory) {
         return _pointHistory[val];
     }
 
+    //@audit not sure how is this different from pointHistory
     function userPointHistory(
         uint256 val,
         uint256 loc
@@ -183,6 +200,8 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
     /// @dev Returns the voting power of the `_owner`.
     ///      Throws if `_owner` is the zero address. NFTs assigned to the zero address are considered invalid.
     /// @param _owner Address for whom to query the voting power of.
+    //@audit doesn't seem to throw if owner is zero address
+    //@audit compare this to ERC721Enumerable implementation
     function votingPowerOf(
         address _owner
     ) external view returns (uint256 _power) {
@@ -222,6 +241,7 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
     /// @param _spender address of the spender to query
     /// @param _tokenId uint ID of the token to be transferred
     /// @return bool whether the msg.sender is approved for the given token ID, is an operator of the owner, or is the owner of the token
+    //@audit compare this to ERC721 implementation
     function _isApprovedOrOwner(
         address _spender,
         uint256 _tokenId
@@ -284,6 +304,7 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
 
     /// @dev Add a NFT to a given address
     ///      Throws if `_tokenId` is owned by someone.
+    //@audit important function, changes ownership. Check if anything missed out
     function _addTokenTo(address _to, uint256 _tokenId) internal {
         // Throws if `_tokenId` is owned by someone
         assert(idToOwner[_tokenId] == address(0));
@@ -297,6 +318,8 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
 
     /// @dev Remove a NFT from a given address
     ///      Throws if `_from` is not the current owner.
+    //@audit during transfer, token is removed from current owner then added to new owner.
+    //@audit why not just add?
     function _removeTokenFrom(address _from, uint256 _tokenId) internal {
         // Throws if `_from` is not the current owner
         assert(idToOwner[_tokenId] == _from);
@@ -340,6 +363,7 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
         // Add NFT
         _addTokenTo(_to, _tokenId);
         // Set the block of ownership transfer (for Flash NFT protection)
+        //@audit what is flash nft protection?
         ownershipChange[_tokenId] = block.number;
         // Log the transfer
         emit Transfer(_from, _to, _tokenId);
@@ -655,6 +679,19 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
         }
     }
 
+    // struct LockedBalance {
+    //     int128 amount;
+    //     uint256 end;
+    //     uint256 start;
+    // }
+    // enum DepositType {
+    //     DEPOSIT_FOR_TYPE,
+    //     CREATE_LOCK_TYPE,
+    //     INCREASE_LOCK_AMOUNT,
+    //     INCREASE_UNLOCK_TIME,
+    //     MERGE_TYPE
+    // }
+
     /// @notice Deposit and lock tokens for a user
     /// @param _tokenId NFT that holds lock
     /// @param _value Amount to deposit
@@ -669,7 +706,7 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
         DepositType depositType
     ) internal {
         LockedBalance memory _locked = lockedBalance;
-        uint256 supplyBefore = supply;
+        uint256 supplyBefore = supply; //@audit amt of deposited tokens in contract
 
         supply = supplyBefore + _value;
         LockedBalance memory oldLocked;
@@ -708,6 +745,8 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
         emit Supply(supplyBefore, supplyBefore + _value);
     }
 
+    //@audit what does this function do? Merge two locked positions together?
+    //@audit no natspec
     function merge(uint256 _from, uint256 _to) external override {
         require(_from != _to, "same nft");
         require(_isApprovedOrOwner(msg.sender, _from), "from not approved");
@@ -731,6 +770,7 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
     }
 
     /// @notice Record global data to checkpoint
+    //@audit can be called by anyone. Also called during depositFor and withdraw
     function checkpoint() external override {
         _checkpoint(0, LockedBalance(0, 0, 0), LockedBalance(0, 0, 0));
     }
@@ -756,6 +796,7 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
     /// @param _value Amount to deposit
     /// @param _lockDuration Number of seconds to lock tokens for (rounded down to nearest week)
     /// @param _to Address to deposit
+    //@audit main entry point for most users, deposit tokens and mint NFT
     function _createLock(
         uint256 _value,
         uint256 _lockDuration,
@@ -776,7 +817,7 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
 
         _depositFor(
             _tokenId,
-            _value,
+            _value,-
             unlockTime,
             locked[_tokenId],
             DepositType.CREATE_LOCK_TYPE
@@ -1079,6 +1120,7 @@ contract ZeroLocker is Initializable, ReentrancyGuard, IZeroLocker, ERC2981 {
     /// @notice Calculate total voting power at some point in the past
     /// @param _block Block to calculate the total voting power at
     /// @return Total voting power at `_block`
+    //@audit consider reading rareskills article https://www.rareskills.io/post/erc20-snapshot
     function totalSupplyAt(
         uint256 _block
     ) external view override returns (uint256) {

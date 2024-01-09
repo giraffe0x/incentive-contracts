@@ -479,6 +479,7 @@ contract ZLRewardsController is
      * @param _user address to receive
      * @param _amount to vest
      */
+     // @audit this part is quite different from RDNT
     function _vestTokens(address _user, uint256 _amount) internal {
         if (_amount == 0) revert NothingToVest();
         streamedVesting.createVestFor(_user, _amount);

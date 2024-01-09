@@ -49,6 +49,8 @@ contract StakingEmissions is OwnableUpgradeable, PausableUpgradeable, Epoch {
         renounceOwnership();
     }
 
+    // @audit not guarded. What are the implications? Timing the rewards?
+    // Distribute what tokens? 
     function distribute() external {
         _distribute();
     }

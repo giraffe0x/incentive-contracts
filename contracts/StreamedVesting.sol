@@ -49,7 +49,7 @@ contract StreamedVesting is
         IZeroLocker _locker,
         IBonusPool _bonusPool
     ) external initializer {
-        underlying = _underlying;
+        underlying = _underlying; // @audit protocol token
         vestedToken = _vestedToken;
         locker = _locker;
         bonusPool = _bonusPool;
@@ -74,6 +74,7 @@ contract StreamedVesting is
         _createVest(msg.sender, to, amount);
     }
 
+    // @audit token -> locked to get vesting token -> create vest to burn vesting token and get token
     function _createVest(
         address from,
         address to,
@@ -97,6 +98,7 @@ contract StreamedVesting is
         emit VestingCreated(to, lastId, amount, block.timestamp);
     }
 
+    // @audit only interaction with locker
     function stakeTo4Year(uint256 id) external whenNotPaused {
         VestInfo memory vest = vests[id];
         require(msg.sender == vest.who, "not owner");
@@ -207,6 +209,7 @@ contract StreamedVesting is
         return penalty(vest.startAt, block.timestamp);
     }
 
+    // @audit looks buggy, relook into this
     function penalty(
         uint256 startTime,
         uint256 nowTime
@@ -217,7 +220,7 @@ contract StreamedVesting is
         // Before vesting the penalty is 95%
         if (nowTime < startTime) return 95e18 / 100;
 
-        uint256 percentage = ((nowTime - startTime) * 1e18) / duration;
+        uint256 percentage = ((nowTime - startTime) * 1e18) / duration; //@audit when does it go to this scenario? now == start?
 
         uint256 penaltyE20 = 95e18 - (75e18 * percentage) / 1e18;
         return penaltyE20 / 100;
